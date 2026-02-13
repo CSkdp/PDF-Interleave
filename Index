@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PDF Alternator (PoC)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; max-width: 760px; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin: 12px 0; }
+    label { display:block; margin: 10px 0 6px; font-weight: 600; }
+    input[type="number"], input[type="file"] { width: 100%; }
+    button { padding: 10px 14px; border-radius: 10px; border: 1px solid #333; background: #111; color: #fff; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .msg { white-space: pre-wrap; margin-top: 10px; }
+    small { color: #555; }
+  </style>
+</head>
+<body>
+  <h1>PDF Alternator (Proof of Concept)</h1>
+  <p><small>Upload two <strong>single-page</strong> PDFs and choose how many times each should repeat. Output order: A, B, A, B… until quantities are satisfied.</small></p>
+
+  <div class="card">
+    <label>PDF A (single page)</label>
+    <input id="pdfA" type="file" accept="application/pdf" />
+
+    <label>PDF B (single page)</label>
+    <input id="pdfB" type="file" accept="application/pdf" />
+
+    <div class="row">
+      <div>
+        <label>Quantity for A</label>
+        <input id="qtyA" type="number" min="0" value="1" />
+      </div>
+      <div>
+        <label>Quantity for B</label>
+        <input id="qtyB" type="number" min="0" value="1" />
+      </div>
+    </div>
+
+    <div style="margin-top: 14px;">
+      <button id="makeBtn">Create & Download PDF</button>
+      <div id="status" class="msg"></div>
+    </div>
+  </div>
+
+  <!-- pdf-lib via CDN -->
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+
+  <script>
+    const { PDFDocument } = PDFLib;
+
+    const pdfAEl = document.getElementById("pdfA");
+    const pdfBEl = document.getElementById("pdfB");
+    const qtyAEl = document.getElementById("qtyA");
+    const qtyBEl = document.getElementById("qtyB");
+    const btn = document.getElementById("makeBtn");
+    const statusEl = document.getElementById("status");
+
+    function setStatus(msg) { statusEl.textContent = msg; }
+
+    async function readSinglePage(file) {
+      const bytes = await file.arrayBuffer();
+      const doc = await PDFDocument.load(bytes);
+      if (doc.getPageCount() !== 1) {
+        throw new Error(`${file.name} must be exactly 1 page (found ${doc.getPageCount()}).`);
+      }
+      return doc;
+    }
+
+    btn.addEventListener("click", async () => {
+      setStatus("");
+      btn.disabled = true;
+
+      try {
+        const fileA = pdfAEl.files?.[0];
+        const fileB = pdfBEl.files?.[0];
+        if (!fileA || !fileB) throw new Error("Please upload both PDFs.");
+
+        const qtyA = parseInt(qtyAEl.value, 10);
+        const qtyB = parseInt(qtyBEl.value, 10);
+        if (!Number.isFinite(qtyA) || !Number.isFinite(qtyB) || qtyA < 0 || qtyB < 0) {
+          throw new Error("Quantities must be whole numbers ≥ 0.");
+        }
+        if (qtyA === 0 && qtyB === 0) {
+          throw new Error("At least one quantity must be > 0.");
+        }
+
+        setStatus("Loading PDFs...");
+        const docA = await readSinglePage(fileA);
+        const docB = await readSinglePage(fileB);
+
+        setStatus("Building combined document...");
+        const outDoc = await PDFDocument.create();
+        const [pageA] = await outDoc.copyPages(docA, [0]);
+        const [pageB] = await outDoc.copyPages(docB, [0]);
+
+        let i = 0, j = 0;
+        while (i < qtyA || j < qtyB) {
+          if (i < qtyA) { outDoc.addPage(pageA); i++; }
+          if (j < qtyB) { outDoc.addPage(pageB); j++; }
+        }
+
+        const outBytes = await outDoc.save();
+        const blob = new Blob([outBytes], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "combined.pdf";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        URL.revokeObjectURL(url);
+        setStatus("Done. Download should have started.");
+      } catch (err) {
+        setStatus("Error: " + (err?.message || err));
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
