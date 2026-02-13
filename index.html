@@ -18,7 +18,10 @@
 </head>
 <body>
   <h1>PDF Alternator (Proof of Concept)</h1>
-  <p><small>Upload two <strong>single-page</strong> PDFs and choose how many times each should repeat. Output order: A, B, A, B… until quantities are satisfied.</small></p>
+  <p><small>
+    Upload two <strong>single-page</strong> PDFs and choose how many times each should repeat.
+    Output order: A, B, A, B… until quantities are satisfied.
+  </small></p>
 
   <div class="card">
     <label>PDF A (single page)</label>
@@ -62,8 +65,9 @@
     async function readSinglePage(file) {
       const bytes = await file.arrayBuffer();
       const doc = await PDFDocument.load(bytes);
-      if (doc.getPageCount() !== 1) {
-        throw new Error(`${file.name} must be exactly 1 page (found ${doc.getPageCount()}).`);
+      const pageCount = doc.getPageCount();
+      if (pageCount !== 1) {
+        throw new Error(`${file.name} must be exactly 1 page (found ${pageCount}).`);
       }
       return doc;
     }
@@ -92,13 +96,21 @@
 
         setStatus("Building combined document...");
         const outDoc = await PDFDocument.create();
-        const [pageA] = await outDoc.copyPages(docA, [0]);
-        const [pageB] = await outDoc.copyPages(docB, [0]);
 
+        // IMPORTANT: copy a fresh page each time you add it.
+        // Reusing the same copied page instance can produce corrupted/blank pages in some PDF viewers.
         let i = 0, j = 0;
         while (i < qtyA || j < qtyB) {
-          if (i < qtyA) { outDoc.addPage(pageA); i++; }
-          if (j < qtyB) { outDoc.addPage(pageB); j++; }
+          if (i < qtyA) {
+            const [pA] = await outDoc.copyPages(docA, [0]);
+            outDoc.addPage(pA);
+            i++;
+          }
+          if (j < qtyB) {
+            const [pB] = await outDoc.copyPages(docB, [0]);
+            outDoc.addPage(pB);
+            j++;
+          }
         }
 
         const outBytes = await outDoc.save();
